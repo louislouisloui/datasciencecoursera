@@ -1,0 +1,81 @@
+---
+title: "Course project"
+output: html_document
+---
+# Cleaning the data set
+
+After loading the data set, we look at the features, their type, their value, the NAs, etc
+
+```{r, echo = FALSE, cache=TRUE}
+data_set  <- read.csv2(file="pml-training.csv", sep=",", na.strings = "",stringsAsFactors = FALSE )
+```
+```{r, echo = TRUE, cache=TRUE}
+str(data_set)
+```
+
+So we can notice the following things:
+* many columns have a lot of NAs
+* some columns bring an information non valuable in the context of the experiment: name, id
+* some columns are redundant. New window is redundant with other columns, when it is equal to "yes" the kurolisis values are filled, otherwise they are not. The timestamp is redundant since it is available in both double and date format
+* the format of the columns is messy, a lot of integer/double are set as characters. I imported them dropping the factor in the read.csv, otherwise they would be factors
+
+To clean the data set, we do the following:
+* we filter the columns with a high frequence of NAs
+* we filter the redundant and non valuable columns
+* by now we only have numerical columns with the wrong format + the outcome. So we change all the formats to numeric
+* format the outcome (classe) as a factor
+
+We end with the follwing data set
+
+```{r, echo=TRUE, cache=TRUE}
+# get the NAs by columns
+col.na  <- apply(data_set,2,function(x) sum(is.na(x)|x=="NA"))
+
+# extract the position of these columns
+dt.na  <- data.frame("col.names"=names(col.na), "na.count"=as.vector(col.na))
+index.na  <- as.numeric(row.names(dt.na[dt.na$na.count>0,]))
+
+# filter all the columns we do not want
+data_set_clean  <- data_set [,-c(index.na,1,2,5,6),]
+data_set_clean[,1:(dim(data_set_clean)[2]-1)] <- as.data.frame(sapply(data_set_clean[,1:(dim(data_set_clean)[2]-1)], as.numeric))
+data_set_clean[,dim(data_set_clean)[2]] <- as.factor(data_set_clean[,dim(data_set_clean)[2]])
+
+str(data_set_clean)
+```
+
+# Preparing the data for CV
+Then we can start working on the data. First we create a partition train/validation so we estimate our error rate before applying it to the test set
+
+```{r, echo=TRUE, cache=TRUE, warning=FALSE, message=FALSE}
+library(caret)
+train  <- createDataPartition(data_set_clean$classe,p=0.7, list=FALSE);
+dt.train  <- data_set_clean[train,];
+dt.verif  <- data_set_clean[-train,];
+```
+
+# Fitting the models
+Now we can fit different model, and look at their accuracy on the train set. So since it is a classification problem with more than 2 classes, the logistic regression wont be that relevant. I picked different models from the least flexible to the more flexible:
+* LDA
+* Tree
+* Random Forest
+
+```{r, echo=TRUE, cache=TRUE, warning=FALSE, message=FALSE}
+modelfit.lda  <- train(classe~., method="lda", data = dt.train)
+modelfit.tree  <- train(classe~., method="rpart", data = dt.train)
+modelfit.rf  <- train(classe~., method="rf", data = dt.train)
+```
+
+# Test the models
+Now we can look what is the error rate on the verification set. 
+```{r, echo=TRUE, cache=TRUE, warning=FALSE, message=FALSE}
+confusion.matrix.lda <- confusionMatrix(dt.verif$classe,predict(modelfit.lda, newdata = dt.verif[,-dim(dt.verif)[2]]))
+confusion.matrix.tree <- confusionMatrix(dt.verif$classe,predict(modelfit.tree, newdata = dt.verif[,-dim(dt.verif)[2]]))
+confusion.matrix.rf <- confusionMatrix(dt.verif$classe,predict(modelfit.rf, newdata = dt.verif[,-dim(dt.verif)[2]]))
+
+confusion.matrix.lda$overall[1]
+confusion.matrix.tree$overall[1]
+confusion.matrix.rf$overall[1]
+```
+
+#Conclusion
+The random forest seems to over perform the é other algorithms on the verification set. Though it takes a lot of time to process, so the LDA can be a good compromise in this case.
